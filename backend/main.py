@@ -1,32 +1,48 @@
-# backend/main.py
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Dict, List
 
 app = FastAPI()
 
-# CORS設定（Next.js からの通信許可）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 本番では適切に制限する
+    allow_origins=["*"],  # 本番では適切に制限するらしい
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 接続してきたWebSocketクライアントの一覧
-connections = []
+rooms: Dict[str, List[WebSocket]] = {}
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+@app.websocket("/ws/{room_id}")
+async def websocket_endpoint(websocket: WebSocket, room_id: str):
     await websocket.accept()
-    connections.append(websocket)
+    print(f" 接続: room={room_id}")
+
+    if room_id not in rooms:
+        rooms[room_id] = []
+    rooms[room_id].append(websocket)
+    print(f"現在の接続数（{room_id}）: {len(rooms[room_id])}")
+
     try:
         while True:
             data = await websocket.receive_text()
-            # 自分以外の全クライアントに転送
-            for conn in connections:
-                if conn != websocket:
-                    await conn.send_text(data)
+            print(f"受信 from {room_id}: {data[:100]}...")  # 長すぎると切れるので短縮表示
+
+            for conn in rooms[room_id]:
+                # 送信元も含めて全員に中継（WebRTCに必要）
+                await conn.send_text(data)
+
     except WebSocketDisconnect:
-        connections.remove(websocket)
+        print(f"切断: room={room_id}")
+        rooms[room_id].remove(websocket)
+        if not rooms[room_id]:
+            del rooms[room_id]
+            print(f"空のルーム削除: {room_id}")
+
+    except Exception as e:
+        print(f"エラー: {e}")
+        if websocket in rooms.get(room_id, []):
+            rooms[room_id].remove(websocket)
+        if not rooms.get(room_id):
+            rooms.pop(room_id, None)
