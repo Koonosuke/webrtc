@@ -3,33 +3,32 @@
 import { useRef, useState } from 'react';
 
 export default function CallPage() {
-  const localVideo = useRef<HTMLVideoElement>(null);//自身のPCカメラ表示
-  const remoteVideo = useRef<HTMLVideoElement>(null);//相手のカメラ
-  const pc = useRef<RTCPeerConnection | null>(null);//P2P接続のオブジェクト
-  const ws = useRef<WebSocket | null>(null);//シグナリング用のWebSocket接続（バックエンド通信）
-  const [started, setStarted] = useState(false);//通話開始
+  const localVideo = useRef<HTMLVideoElement>(null);
+  const remoteVideo = useRef<HTMLVideoElement>(null);
+  const pc = useRef<RTCPeerConnection | null>(null);
+  const ws = useRef<WebSocket | null>(null);
+
+  const [started, setStarted] = useState(false);
+  const [users, setUsers] = useState<string[]>([]); // 👈 ユーザー一覧の状態追加
 
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const roomId = urlParams?.get('room') || 'default';//受信者
-  const isOfferer = urlParams?.get('offer') === 'true';//発信者
+  const roomId = urlParams?.get('room') || 'default';
+  const isOfferer = urlParams?.get('offer') === 'true';
 
-const getWebSocketURL = () => {
-  const hostname = location.hostname;
-  const isTunnel = hostname.includes('ngrok-free.app') || hostname.includes('trycloudflare.com');
+  const getUserName = () => {
+    return localStorage.getItem('userName') || `User${Math.floor(Math.random() * 1000)}`;
+  };
 
-  // Cloudflare用のURLに書き換え!
-
-  const fastapiHost = 'orbit-thou-connection-specifies.trycloudflare.com';
-
-  const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  const wsHost = isTunnel ? `${wsProtocol}://${fastapiHost}` : `${wsProtocol}://${location.host}`;
-
-  return `${wsHost}/ws/${roomId}`;
-};
-
+  const getWebSocketURL = () => {
+    const hostname = location.hostname;
+    const isTunnel = hostname.includes('ngrok-free.app') || hostname.includes('trycloudflare.com');
+    const fastapiHost = 'upgrading-lean-interesting-americans.trycloudflare.com';
+    const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsHost = isTunnel ? `${wsProtocol}://${fastapiHost}` : `${wsProtocol}://${location.host}`;
+    return `${wsHost}/ws/${roomId}`;
+  };
 
   const start = async () => {
-    // getUserMedia の存在チェック
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       alert('このブラウザはカメラ・マイクをサポートしていません。');
       return;
@@ -38,7 +37,7 @@ const getWebSocketURL = () => {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     if (localVideo.current) localVideo.current.srcObject = stream;
 
-    pc.current = new RTCPeerConnection({//P2P接続をする→STUN/TURNサーバー
+    pc.current = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         {
@@ -62,6 +61,10 @@ const getWebSocketURL = () => {
     ws.current = new WebSocket(getWebSocketURL());
 
     ws.current.onopen = async () => {
+      // 👇 ユーザー名送信（最初に1回だけ）
+      const userName = getUserName();
+      ws.current!.send(JSON.stringify({ type: 'join', user: userName }));
+
       if (isOfferer) {
         const offer = await pc.current!.createOffer();
         await pc.current!.setLocalDescription(offer);
@@ -69,51 +72,47 @@ const getWebSocketURL = () => {
       }
     };
 
-const iceCandidateQueue: RTCIceCandidate[] = [];
+    const iceCandidateQueue: RTCIceCandidate[] = [];
 
-ws.current.onmessage = async (event) => {
-  const data = JSON.parse(event.data);
-  console.log('WebSocket 受信:', data);
+    ws.current.onmessage = async (event) => {
+      const data = JSON.parse(event.data);
+      console.log('WebSocket 受信:', data);
 
-  if (data.type === 'offer') {
-    if (!isOfferer) {
-      console.log('オファーを受信！');
-      await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
-      const answer = await pc.current?.createAnswer();
-      await pc.current?.setLocalDescription(answer!);
-      ws.current?.send(JSON.stringify(pc.current?.localDescription));
-      console.log('アンサー送信！');
-    }
-  } else if (data.type === 'answer') {
-    if (isOfferer) {
-      console.log('アンサーを受信！');
-      await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
-      // remoteDescription 設定後にキューを適用
-      while (iceCandidateQueue.length > 0) {
-        const candidate = iceCandidateQueue.shift();
-        try {
-          await pc.current?.addIceCandidate(candidate!);
-        } catch (e) {
-          console.warn('ICE追加エラー:', e);
+      if (data.type === 'userList') {
+        console.log('🧑‍🤝‍🧑 ユーザー一覧:', data.users);
+        setUsers(data.users);
+      } else if (data.type === 'offer') {
+        if (!isOfferer) {
+          await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
+          const answer = await pc.current?.createAnswer();
+          await pc.current?.setLocalDescription(answer!);
+          ws.current?.send(JSON.stringify(pc.current?.localDescription));
+        }
+      } else if (data.type === 'answer') {
+        if (isOfferer) {
+          await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
+          while (iceCandidateQueue.length > 0) {
+            const candidate = iceCandidateQueue.shift();
+            try {
+              await pc.current?.addIceCandidate(candidate!);
+            } catch (e) {
+              console.warn('ICE追加エラー:', e);
+            }
+          }
+        }
+      } else if (data.candidate) {
+        const candidate = new RTCIceCandidate(data);
+        if (pc.current?.remoteDescription && pc.current.remoteDescription.type) {
+          try {
+            await pc.current.addIceCandidate(candidate);
+          } catch (e) {
+            console.warn('ICE candidate 追加失敗:', e);
+          }
+        } else {
+          iceCandidateQueue.push(candidate);
         }
       }
-    }
-  } else if (data.candidate) {
-    const candidate = new RTCIceCandidate(data);
-    if (pc.current?.remoteDescription && pc.current.remoteDescription.type) {
-      try {
-        console.log('ICE candidate 受信: 即時追加');
-        await pc.current.addIceCandidate(candidate);
-      } catch (e) {
-        console.warn('ICE candidate 即時追加失敗:', e);
-      }
-    } else {
-      console.log('ICE candidate 受信: 待機キューに追加');
-      iceCandidateQueue.push(candidate);
-    }
-  }
-};
-
+    };
 
     pc.current.onicecandidate = (event) => {
       if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
@@ -135,12 +134,26 @@ ws.current.onmessage = async (event) => {
   return (
     <main className="flex flex-col items-center p-8 gap-4">
       <h1 className="text-2xl font-bold">WebRTC 通話モック</h1>
+
       <video ref={localVideo} autoPlay muted playsInline className="w-80 border rounded" />
       <video ref={remoteVideo} autoPlay playsInline className="w-80 border rounded" />
+
       {!started && (
         <button onClick={start} className="bg-blue-500 text-white px-4 py-2 rounded">
           通話開始
         </button>
+      )}
+
+      {/* 👇 ユーザー一覧表示 */}
+      {users.length > 0 && (
+        <div className="mt-4">
+          <h2 className="text-lg font-semibold">接続中のユーザー:</h2>
+          <ul className="list-disc ml-6">
+            {users.map((user) => (
+              <li key={user}>{user}</li>
+            ))}
+          </ul>
+        </div>
       )}
     </main>
   );
