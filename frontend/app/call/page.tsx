@@ -7,33 +7,23 @@ export default function CallPage() {
   const remoteVideo = useRef<HTMLVideoElement>(null);
   const pc = useRef<RTCPeerConnection | null>(null);
   const ws = useRef<WebSocket | null>(null);
-
   const [started, setStarted] = useState(false);
-  const [users, setUsers] = useState<string[]>([]); // 👈 ユーザー一覧の状態追加
+  const [users, setUsers] = useState<string[]>([]);
 
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const roomId = urlParams?.get('room') || 'default';
-  const isOfferer = urlParams?.get('offer') === 'true';
-
-  const getUserName = () => {
-    return localStorage.getItem('userName') || `User${Math.floor(Math.random() * 1000)}`;
-  };
+  const userName = urlParams?.get('user') || `User${Math.floor(Math.random() * 1000)}`;
 
   const getWebSocketURL = () => {
     const hostname = location.hostname;
     const isTunnel = hostname.includes('ngrok-free.app') || hostname.includes('trycloudflare.com');
-    const fastapiHost = 'upgrading-lean-interesting-americans.trycloudflare.com';
+    const fastapiHost = 'pointing-workers-trainer-somerset.trycloudflare.com';
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsHost = isTunnel ? `${wsProtocol}://${fastapiHost}` : `${wsProtocol}://${location.host}`;
     return `${wsHost}/ws/${roomId}`;
   };
 
   const start = async () => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      alert('このブラウザはカメラ・マイクをサポートしていません。');
-      return;
-    }
-
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     if (localVideo.current) localVideo.current.srcObject = stream;
 
@@ -48,9 +38,7 @@ export default function CallPage() {
       ],
     });
 
-    stream.getTracks().forEach((track) => {
-      pc.current?.addTrack(track, stream);
-    });
+    stream.getTracks().forEach((track) => pc.current?.addTrack(track, stream));
 
     pc.current.ontrack = (event) => {
       if (remoteVideo.current && !remoteVideo.current.srcObject) {
@@ -58,29 +46,26 @@ export default function CallPage() {
       }
     };
 
+    const iceCandidateQueue: RTCIceCandidate[] = [];
+
     ws.current = new WebSocket(getWebSocketURL());
 
+    let isOfferer = false;
+
     ws.current.onopen = async () => {
-      // 👇 ユーザー名送信（最初に1回だけ）
-      const userName = getUserName();
       ws.current!.send(JSON.stringify({ type: 'join', user: userName }));
-
-      if (isOfferer) {
-        const offer = await pc.current!.createOffer();
-        await pc.current!.setLocalDescription(offer);
-        ws.current!.send(JSON.stringify(offer));
-      }
     };
-
-    const iceCandidateQueue: RTCIceCandidate[] = [];
 
     ws.current.onmessage = async (event) => {
       const data = JSON.parse(event.data);
-      console.log('WebSocket 受信:', data);
-
       if (data.type === 'userList') {
-        console.log('🧑‍🤝‍🧑 ユーザー一覧:', data.users);
         setUsers(data.users);
+        if (data.users.length === 1 && pc.current && !isOfferer) {
+          isOfferer = true;
+          const offer = await pc.current.createOffer();
+          await pc.current.setLocalDescription(offer);
+          ws.current!.send(JSON.stringify(offer));
+        }
       } else if (data.type === 'offer') {
         if (!isOfferer) {
           await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
@@ -92,22 +77,13 @@ export default function CallPage() {
         if (isOfferer) {
           await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
           while (iceCandidateQueue.length > 0) {
-            const candidate = iceCandidateQueue.shift();
-            try {
-              await pc.current?.addIceCandidate(candidate!);
-            } catch (e) {
-              console.warn('ICE追加エラー:', e);
-            }
+            await pc.current?.addIceCandidate(iceCandidateQueue.shift()!);
           }
         }
       } else if (data.candidate) {
         const candidate = new RTCIceCandidate(data);
-        if (pc.current?.remoteDescription && pc.current.remoteDescription.type) {
-          try {
-            await pc.current.addIceCandidate(candidate);
-          } catch (e) {
-            console.warn('ICE candidate 追加失敗:', e);
-          }
+        if (pc.current?.remoteDescription) {
+          await pc.current.addIceCandidate(candidate);
         } else {
           iceCandidateQueue.push(candidate);
         }
@@ -120,41 +96,48 @@ export default function CallPage() {
       }
     };
 
-    ws.current.onerror = () => {
-      alert('WebSocket エラーが発生しました。');
-    };
-
-    ws.current.onclose = () => {
-      alert('WebSocket 接続が切断されました。');
-    };
-
     setStarted(true);
   };
 
   return (
-    <main className="flex flex-col items-center p-8 gap-4">
-      <h1 className="text-2xl font-bold">WebRTC 通話モック</h1>
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-start py-8 px-4">
+      <h1 className="text-3xl font-bold mb-6"> WebRTC 通話モック</h1>
 
-      <video ref={localVideo} autoPlay muted playsInline className="w-80 border rounded" />
-      <video ref={remoteVideo} autoPlay playsInline className="w-80 border rounded" />
+      <div className="flex flex-col lg:flex-row gap-6 w-full max-w-6xl justify-center">
+        <video
+          ref={localVideo}
+          autoPlay
+          muted
+          playsInline
+          className="w-full lg:w-1/2 rounded-lg shadow-lg border border-gray-700"
+        />
+        <video
+          ref={remoteVideo}
+          autoPlay
+          playsInline
+          className="w-full lg:w-1/2 rounded-lg shadow-lg border border-gray-700"
+        />
+      </div>
 
       {!started && (
-        <button onClick={start} className="bg-blue-500 text-white px-4 py-2 rounded">
-          通話開始
+        <button
+          onClick={start}
+          className="mt-8 bg-blue-600 hover:bg-blue-700 transition px-6 py-3 rounded-lg font-semibold text-lg"
+        >
+          通話を開始する
         </button>
       )}
 
-      {/* 👇 ユーザー一覧表示 */}
       {users.length > 0 && (
-        <div className="mt-4">
-          <h2 className="text-lg font-semibold">接続中のユーザー:</h2>
-          <ul className="list-disc ml-6">
+        <div className="mt-10 bg-gray-800 p-4 rounded-lg shadow-md w-full max-w-md">
+          <h2 className="text-xl font-semibold mb-2">🧑‍🤝‍🧑 接続中のユーザー:</h2>
+          <ul className="list-disc pl-6 space-y-1">
             {users.map((user) => (
               <li key={user}>{user}</li>
             ))}
           </ul>
         </div>
       )}
-    </main>
+    </div>
   );
 }
