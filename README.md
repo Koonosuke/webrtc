@@ -13,10 +13,28 @@
 
 uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 
+別ターミナルで
+cloudflared tunnel --url http://localhost:8000
+
+★上記の実行で発行されたhttps://以外の部分をコピー
+
+call/page.tsxの   const fastapiHost = 'pointing-workers-trainer-somerset.trycloudflare.com';ここに張り付け（ランダムなので）
+
+
 フロントエンド
 
 npm run dev
+別ターミナルで
+cloudflared tunnel --url http://localhost:3000
 
+
+同じWi-FiでPCをできれば２つ用意！
+１つの場合でもOK!
+
+Claudeflareで生成したhttpsのフロントエンドのリンクを用意
+以下のようにリンクを２つのブラウザで開く！
+１：用意したリンク/call?room=testroom&user=Kishi（この名前は何でもOK）
+２：用意したリンク/call?room=testroom&user=Yoshimura（この名前は何でもOK）
 
 ## 現在の実装状況
 
