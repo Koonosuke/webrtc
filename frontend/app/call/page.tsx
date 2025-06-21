@@ -19,7 +19,7 @@ const getWebSocketURL = () => {
 
   // Cloudflare用のURLに書き換え!
 
-  const fastapiHost = 'patient-voip-pool-climbing.trycloudflare.com';
+  const fastapiHost = 'orbit-thou-connection-specifies.trycloudflare.com';
 
   const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
   const wsHost = isTunnel ? `${wsProtocol}://${fastapiHost}` : `${wsProtocol}://${location.host}`;
