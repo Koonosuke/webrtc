@@ -1,5 +1,6 @@
 'use client';
 
+import { Kaisei_HarunoUmi } from 'next/font/google';
 import { useRef, useState } from 'react';
 
 export default function CallPage() {
@@ -17,7 +18,7 @@ export default function CallPage() {
   const getWebSocketURL = () => {
     const hostname = location.hostname;
     const isTunnel = hostname.includes('ngrok-free.app') || hostname.includes('trycloudflare.com');
-    const fastapiHost = 'pointing-workers-trainer-somerset.trycloudflare.com';
+   const fastapiHost = process.env.NEXT_PUBLIC_FASTAPI_HOST || location.hostname;
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsHost = isTunnel ? `${wsProtocol}://${fastapiHost}` : `${wsProtocol}://${location.host}`;
     return `${wsHost}/ws/${roomId}`;
@@ -37,6 +38,7 @@ export default function CallPage() {
         },
       ],
     });
+
 
     stream.getTracks().forEach((track) => pc.current?.addTrack(track, stream));
 

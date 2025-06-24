@@ -3,6 +3,7 @@ node_modules/
 .next/
 out/
 .env.local
+.env.development
 
 # Python
 venv/
@@ -12,3 +13,5 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+

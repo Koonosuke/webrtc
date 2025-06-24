@@ -69,3 +69,11 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             await broadcast_user_list(room_id)
         else:
             rooms.pop(room_id, None)
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.get("/")
+def root():
+    return {"status": "ok"}
