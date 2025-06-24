@@ -1,24 +1,32 @@
 'use client';
 
-import { Kaisei_HarunoUmi } from 'next/font/google';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 
 export default function CallPage() {
   const localVideo = useRef<HTMLVideoElement>(null);
   const remoteVideo = useRef<HTMLVideoElement>(null);
   const pc = useRef<RTCPeerConnection | null>(null);
   const ws = useRef<WebSocket | null>(null);
+
   const [started, setStarted] = useState(false);
   const [users, setUsers] = useState<string[]>([]);
+  const [roomId, setRoomId] = useState('default');
+  const [userName, setUserName] = useState('');
 
-  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const roomId = urlParams?.get('room') || 'default';
-  const userName = urlParams?.get('user') || `User${Math.floor(Math.random() * 1000)}`;
+  // ✅ URLパラメータから roomId / userName を取得
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      setRoomId(params.get('room') || 'default');
+      setUserName(params.get('user') || `User${Math.floor(Math.random() * 1000)}`);
+    }
+  }, []);
 
+  // ✅ WebSocketのURL生成
   const getWebSocketURL = () => {
     const hostname = location.hostname;
     const isTunnel = hostname.includes('ngrok-free.app') || hostname.includes('trycloudflare.com');
-   const fastapiHost = process.env.NEXT_PUBLIC_FASTAPI_HOST || location.hostname;
+    const fastapiHost = process.env.NEXT_PUBLIC_FASTAPI_HOST || location.hostname;
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsHost = isTunnel ? `${wsProtocol}://${fastapiHost}` : `${wsProtocol}://${location.host}`;
     return `${wsHost}/ws/${roomId}`;
@@ -39,11 +47,11 @@ export default function CallPage() {
       ],
     });
 
-
     stream.getTracks().forEach((track) => pc.current?.addTrack(track, stream));
 
+    // ✅ 常に remoteVideo を更新
     pc.current.ontrack = (event) => {
-      if (remoteVideo.current && !remoteVideo.current.srcObject) {
+      if (remoteVideo.current) {
         remoteVideo.current.srcObject = event.streams[0];
       }
     };
@@ -60,14 +68,17 @@ export default function CallPage() {
 
     ws.current.onmessage = async (event) => {
       const data = JSON.parse(event.data);
+
       if (data.type === 'userList') {
         setUsers(data.users);
+
         if (data.users.length === 1 && pc.current && !isOfferer) {
           isOfferer = true;
           const offer = await pc.current.createOffer();
           await pc.current.setLocalDescription(offer);
           ws.current!.send(JSON.stringify(offer));
         }
+
       } else if (data.type === 'offer') {
         if (!isOfferer) {
           await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
@@ -75,6 +86,7 @@ export default function CallPage() {
           await pc.current?.setLocalDescription(answer!);
           ws.current?.send(JSON.stringify(pc.current?.localDescription));
         }
+
       } else if (data.type === 'answer') {
         if (isOfferer) {
           await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
@@ -82,6 +94,7 @@ export default function CallPage() {
             await pc.current?.addIceCandidate(iceCandidateQueue.shift()!);
           }
         }
+
       } else if (data.candidate) {
         const candidate = new RTCIceCandidate(data);
         if (pc.current?.remoteDescription) {
