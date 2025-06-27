@@ -19,6 +19,10 @@ export default function CallPage() {
     const hostname = location.hostname;
     const isTunnel = hostname.includes('ngrok-free.app') || hostname.includes('trycloudflare.com');
    const fastapiHost = process.env.NEXT_PUBLIC_FASTAPI_HOST || location.hostname;
+
+     console.log('✅ NEXT_PUBLIC_FASTAPI_HOST:', process.env.NEXT_PUBLIC_FASTAPI_HOST);
+  console.log('✅ fastapiHost:', fastapiHost);
+  
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsHost = isTunnel ? `${wsProtocol}://${fastapiHost}` : `${wsProtocol}://${location.host}`;
     return `${wsHost}/ws/${roomId}`;
