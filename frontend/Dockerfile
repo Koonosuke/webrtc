@@ -4,14 +4,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# ⬇️ 本番用の環境変数ファイルをコピー
-COPY .env.production .env.production
+# ✅ ここで直接環境変数を定義（最も確実）
+ENV NEXT_PUBLIC_FASTAPI_HOST=webrtc.kishiserver.com
+ENV NODE_ENV=production
 
-# ⬇️ 残りのソースをコピー
 COPY . .
 
-# ⬇️ 本番ビルド時に .env.production を読み込ませる
-ENV NODE_ENV=production
 RUN npm run build
 
 # Production stage

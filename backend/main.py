@@ -22,7 +22,7 @@ async def broadcast_user_list(room_id: str):
         print(f"⚠️ broadcast_user_list: 無効なルーム: {room_id}")
         return
 
-    user_list = [user for _, user in rooms[room_id]]
+    user_list = [user_name for (_, user_name) in rooms[room_id]]  # ✅ 修正
     print(f"📡 ブロードキャスト: {room_id} のユーザー一覧: {user_list}")
 
     message = json.dumps({ "type": "userList", "users": user_list })
@@ -31,6 +31,7 @@ async def broadcast_user_list(room_id: str):
             await conn.send_text(message)
         except Exception as e:
             print(f"⚠️ ユーザー一覧送信失敗: {e}")
+
 
 @app.websocket("/ws/{room_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str):
