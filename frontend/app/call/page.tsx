@@ -1,7 +1,6 @@
 'use client';
 
-import { Kaisei_HarunoUmi } from 'next/font/google';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 
 export default function CallPage() {
   const localVideo = useRef<HTMLVideoElement>(null);
@@ -11,21 +10,21 @@ export default function CallPage() {
   const [started, setStarted] = useState(false);
   const [users, setUsers] = useState<string[]>([]);
 
-  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const roomId = urlParams?.get('room') || 'default';
-  const userName = urlParams?.get('user') || `User${Math.floor(Math.random() * 1000)}`;
+  const [roomId, setRoomId] = useState('default');
+  const [userName, setUserName] = useState('');
 
-  const getWebSocketURL = () => {
-    const hostname = location.hostname;
-    const isTunnel = hostname.includes('ngrok-free.app') || hostname.includes('trycloudflare.com');
-   const fastapiHost = process.env.NEXT_PUBLIC_FASTAPI_HOST || location.hostname;
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      setRoomId(params.get('room') || 'default');
+      setUserName(params.get('user') || `User${Math.floor(Math.random() * 1000)}`);
+    }
+  }, []);
 
-     console.log('✅ NEXT_PUBLIC_FASTAPI_HOST:', process.env.NEXT_PUBLIC_FASTAPI_HOST);
-  console.log('✅ fastapiHost:', fastapiHost);
-  
-    const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsHost = isTunnel ? `${wsProtocol}://${fastapiHost}` : `${wsProtocol}://${location.host}`;
-    return `${wsHost}/ws/${roomId}`;
+  const getWebSocketURL = (): string => {
+    const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = process.env.NEXT_PUBLIC_FASTAPI_HOST || location.hostname;
+    return `${protocol}://${host}/ws/${roomId}`;
   };
 
   const start = async () => {
@@ -43,15 +42,13 @@ export default function CallPage() {
       ],
     });
 
+    stream.getTracks().forEach(track => pc.current?.addTrack(track, stream));
 
-    stream.getTracks().forEach((track) => pc.current?.addTrack(track, stream));
-
- pc.current.ontrack = (event) => {
-  if (remoteVideo.current) {
-    remoteVideo.current.srcObject = event.streams[0];
-  }
-};
-
+    pc.current.ontrack = event => {
+      if (remoteVideo.current && !remoteVideo.current.srcObject) {
+        remoteVideo.current.srcObject = event.streams[0];
+      }
+    };
 
     const iceCandidateQueue: RTCIceCandidate[] = [];
 
@@ -59,45 +56,52 @@ export default function CallPage() {
 
     let isOfferer = false;
 
-    ws.current.onopen = async () => {
-      ws.current!.send(JSON.stringify({ type: 'join', user: userName }));
+    ws.current.onopen = () => {
+      ws.current?.send(JSON.stringify({ type: 'join', user: userName }));
     };
 
-    ws.current.onmessage = async (event) => {
+    ws.current.onmessage = async event => {
       const data = JSON.parse(event.data);
-      if (data.type === 'userList') {
-        setUsers(data.users);
-        if (data.users.length === 1 && pc.current && !isOfferer) {
-          isOfferer = true;
-          const offer = await pc.current.createOffer();
-          await pc.current.setLocalDescription(offer);
-          ws.current!.send(JSON.stringify(offer));
-        }
-      } else if (data.type === 'offer') {
-        if (!isOfferer) {
-          await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
-          const answer = await pc.current?.createAnswer();
-          await pc.current?.setLocalDescription(answer!);
-          ws.current?.send(JSON.stringify(pc.current?.localDescription));
-        }
-      } else if (data.type === 'answer') {
-        if (isOfferer) {
-          await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
-          while (iceCandidateQueue.length > 0) {
-            await pc.current?.addIceCandidate(iceCandidateQueue.shift()!);
+
+      switch (data.type) {
+        case 'userList':
+          setUsers(data.users);
+          if (data.users.length === 1 && pc.current && !isOfferer) {
+            isOfferer = true;
+            const offer = await pc.current.createOffer();
+            await pc.current.setLocalDescription(offer);
+            ws.current?.send(JSON.stringify(offer));
           }
-        }
-      } else if (data.candidate) {
-        const candidate = new RTCIceCandidate(data);
-        if (pc.current?.remoteDescription) {
-          await pc.current.addIceCandidate(candidate);
-        } else {
-          iceCandidateQueue.push(candidate);
-        }
+          break;
+        case 'offer':
+          if (!isOfferer) {
+            await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
+            const answer = await pc.current?.createAnswer();
+            await pc.current?.setLocalDescription(answer!);
+            ws.current?.send(JSON.stringify(pc.current?.localDescription));
+          }
+          break;
+        case 'answer':
+          if (isOfferer) {
+            await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
+            while (iceCandidateQueue.length > 0) {
+              await pc.current?.addIceCandidate(iceCandidateQueue.shift()!);
+            }
+          }
+          break;
+        default:
+          if (data.candidate) {
+            const candidate = new RTCIceCandidate(data);
+            if (pc.current?.remoteDescription) {
+              await pc.current.addIceCandidate(candidate);
+            } else {
+              iceCandidateQueue.push(candidate);
+            }
+          }
       }
     };
 
-    pc.current.onicecandidate = (event) => {
+    pc.current.onicecandidate = event => {
       if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
         ws.current.send(JSON.stringify(event.candidate));
       }
@@ -108,7 +112,7 @@ export default function CallPage() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-start py-8 px-4">
-      <h1 className="text-3xl font-bold mb-6"> WebRTC 通話モック</h1>
+      <h1 className="text-3xl font-bold mb-6">WebRTC 通話モック</h1>
 
       <div className="flex flex-col lg:flex-row gap-6 w-full max-w-6xl justify-center">
         <video
