@@ -46,11 +46,12 @@ export default function CallPage() {
 
     stream.getTracks().forEach((track) => pc.current?.addTrack(track, stream));
 
-    pc.current.ontrack = (event) => {
-      if (remoteVideo.current && !remoteVideo.current.srcObject) {
-        remoteVideo.current.srcObject = event.streams[0];
-      }
-    };
+ pc.current.ontrack = (event) => {
+  if (remoteVideo.current) {
+    remoteVideo.current.srcObject = event.streams[0];
+  }
+};
+
 
     const iceCandidateQueue: RTCIceCandidate[] = [];
 
